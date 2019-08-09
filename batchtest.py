@@ -48,6 +48,9 @@ class BatchTest:
         if not shutil.which('cl'):
             sys.exit('cl.exe not found, run from the VS tools prompt.')
         self.num_files = 100
+        self.cl_cmd = ['cl', '/nologo', '/c', '/experimental:module']
+        self.input_sources = set()
+        self.waiting_for = {} # Key is module ID, value is sources waiting for said module.
 
     def fnames_for(self, i):
         return ('src{}.ixx'.format(i),
@@ -70,11 +73,53 @@ class BatchTest:
             else:
                 with open(fnames[0], 'w') as ofile:
                     ofile.write(iface_template.format(i, first, second, i, first, second))
-    def compile(self):
-        pass
+
+    def mark_as_needing(self, trial, missing_mod):
+        if missing_mod not in self.waiting_for:
+            self.waiting_for[missing_mod] = [trial]
+        else:
+            self.waiting_for[missing_mod].append(trial)
+
+    def try_compile(self, trial):
+        src_name = self.fnames_for(trial)[0]
+        cp = subprocess.run(self.cl_cmd + [src_name],
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            universal_newlines=True)
+        if cp.returncode == 0:
+            return None
+        assert('could not find module' in cp.stdout)
+        for message_line in cp.stdout.split('\n'):
+            if 'could not find module' in message_line:
+                return int(message_line.split("'")[-2][1:])
+        sys.exit('Could not find module error message!')
+
+    def module_created(self, modname):
+        for new_one in self.waiting_for.pop(modname, []):
+            self.input_sources.add(new_one)
+        print('Module', modname, 'finished')
+
+    def build(self):
+        for i in range(self.num_files):
+            # In the real implementation the compiler would have to check
+            # here if the input source is up to date. That is, if
+            # the output object file exists and is newer than all files
+            # it depends on. It might make sense to delete all
+            # the output ifc file immediately for all stale files.
+            self.input_sources.add(i)
+        while len(self.input_sources) > 0:
+            trial = self.input_sources.pop()
+            missing_mod = self.try_compile(trial)
+            if missing_mod is not None:
+                self.mark_as_needing(trial, missing_mod)
+            else:
+                self.module_created(trial)
+        if len(self.waiting_for) > 0:
+            print(self.waiting_for)
+            sys.exit('Could not compile all sources in this target. Bad module dependencies.')
 
 if __name__ == '__main__':
     bt = BatchTest()
     bt.create_files()
-    bt.compile()
+    bt.build()
 
