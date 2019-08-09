@@ -49,7 +49,7 @@ class BatchTest:
             sys.exit('cl.exe not found, run from the VS tools prompt.')
         self.num_files = 100
         self.cl_cmd = ['cl', '/nologo', '/c', '/experimental:module']
-        self.input_sources = set()
+        self.sources_to_compile = set()
         self.waiting_for = {} # Key is module ID, value is sources waiting for said module.
 
     def fnames_for(self, i):
@@ -96,7 +96,7 @@ class BatchTest:
 
     def module_created(self, modname):
         for new_one in self.waiting_for.pop(modname, []):
-            self.input_sources.add(new_one)
+            self.sources_to_compile.add(new_one)
         print('Module', modname, 'finished')
 
     def build(self):
@@ -106,9 +106,9 @@ class BatchTest:
             # the output object file exists and is newer than all files
             # it depends on. It might make sense to delete all
             # the output ifc file immediately for all stale files.
-            self.input_sources.add(i)
-        while len(self.input_sources) > 0:
-            trial = self.input_sources.pop()
+            self.sources_to_compile.add(i)
+        while len(self.sources_to_compile) > 0:
+            trial = self.sources_to_compile.pop()
             missing_mod = self.try_compile(trial)
             if missing_mod is not None:
                 self.mark_as_needing(trial, missing_mod)
